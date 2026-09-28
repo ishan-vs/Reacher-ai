@@ -5,7 +5,6 @@ from tavily import TavilyClient
 import os
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field
-from rich import print
 
 load_dotenv()
 
@@ -68,7 +67,7 @@ def web_search(query: str) -> str:
             out.append(
                 f"Title: {r['title']}\n"
                 f"URL: {r['url']}\n"
-                f"Snippet: {r['content'][:300]}\n"
+                f"Snippet: {r['content'][:250]}\n"
             )
 
         return "\n----\n".join(out)
@@ -111,7 +110,7 @@ def scrape_url(url: str) -> str:
             strip=True
         )
 
-        return text[:3000]
+        return text[:2500]
 
     except Exception as e:
         return f"Could not scrape URL: {str(e)}"

@@ -14,7 +14,9 @@ import "./App.css";
    CONFIG
 ========================================================= */
 
-const API = "http://127.0.0.1:8000";
+// In production this is served by Vercel from the same origin. Set
+// VITE_API_URL only when the API is hosted somewhere else.
+const API = import.meta.env.VITE_API_URL || "/api";
 const HISTORY_KEY = "reacher-history-v1";
 const THEME_KEY = "reacher-theme";
 const EMPTY = [];
@@ -306,7 +308,8 @@ function App() {
   const [expandedReport, setExpandedReport] = useState(false);
 
   /* ---------- new state ---------- */
-  const [theme, setTheme] = useState(() => load(THEME_KEY, "light"));
+  // New visitors start in dark mode; a deliberate theme selection persists.
+  const [theme, setTheme] = useState(() => load(THEME_KEY, "dark"));
   const [animateReport, setAnimateReport] = useState(false);
   const [sharedView, setSharedView] = useState(false);
 
@@ -783,7 +786,10 @@ function App() {
         body: JSON.stringify({ topic: q }),
       });
 
-      if (!response.ok) throw new Error("Research request failed");
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        throw new Error(payload.detail || "Research request failed. Please try again.");
+      }
 
       const data = await response.json();
 
@@ -813,9 +819,7 @@ function App() {
       }, 150);
     } catch (err) {
       console.error(err);
-      setError(
-        "The research service is temporarily unavailable. Please try again later."
-      );
+      setError(err instanceof Error ? err.message : "Research request failed. Please try again.");
     } finally {
       setLoading(false);
     }

@@ -1,44 +1,20 @@
-# Core LangChain ecosystem
+fastapi>=0.141.1
 langchain>=0.2.0
 langchain-core>=0.2.0
 langchain-community>=0.2.0
 langchain-groq>=0.1.0
 langchain-openai>=1.0.0
-
-# Groq LLM
 groq>=0.9.0
-
-# Tavily Search Tool
 tavily-python>=0.3.0
-
-# Web scraping
 beautifulsoup4>=4.12.0
 requests>=2.31.0
 lxml>=5.0.0
-
-# Environment variables
 python-dotenv>=1.0.0
-
-# Async support
 aiohttp>=3.9.0
-
-# Data handling
 pandas>=2.0.0
-
-# Token counting / text utilities
 tiktoken>=0.6.0
-
-# Logging / debugging
 rich>=13.7.0
-
-# Retry + robustness
 tenacity>=8.2.0
-
-# JSON handling
 orjson>=3.9.0
-
-# Data validation
 pydantic>=2.5.0
-
-# HTML parsing / cleanup
 html5lib>=1.1

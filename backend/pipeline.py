@@ -1,9 +1,19 @@
-from agents import (
-    build_reader_agent,
-    build_search_agent,
-    writer_chain,
-    run_critic_safely
-)
+try:
+    from .agents import (
+        writer_chain,
+        run_critic_safely,
+        invoke_with_retry,
+    )
+    from .tools import scrape_url, web_search
+except ImportError:  # Supports running this file directly from backend/.
+    from agents import (
+        writer_chain,
+        run_critic_safely,
+        invoke_with_retry,
+    )
+    from tools import scrape_url, web_search
+import re
+from concurrent.futures import ThreadPoolExecutor
 
 
 def run_research_pipeline(topic: str) -> dict:
@@ -18,25 +28,10 @@ def run_research_pipeline(topic: str) -> dict:
     print("STEP 1 - Search agent is working...")
     print("=" * 50)
 
-    search_agent = build_search_agent()
-
-    search_result = search_agent.invoke({
-        "messages": [
-            (
-                "user",
-                f"""
-Find recent, reliable and detailed information about:
-
-{topic}
-
-Search for multiple relevant sources.
-Return the source titles, URLs and useful information.
-"""
-            )
-        ]
-    })
-
-    state["search_results"] = search_result["messages"][-1].content
+    # Search is already a deterministic Tavily tool. Calling an LLM agent just
+    # to decide to use it added several model calls and frequently hit Groq's
+    # rate limits before any report could be written.
+    state["search_results"] = web_search.invoke({"query": topic})
 
     print("\nSearch Results:\n")
     print(state["search_results"])
@@ -50,32 +45,23 @@ Return the source titles, URLs and useful information.
     print("STEP 2 - Reader agent is scraping top resources...")
     print("=" * 50)
 
-    reader_agent = build_reader_agent()
-
-    reader_result = reader_agent.invoke({
-        "messages": [
-            (
-                "user",
-                f"""
-You are researching this topic:
-
-{topic}
-
-Below are search results:
-
-{state["search_results"][:8000]}
-
-Select the most relevant URL from these results.
-
-Then use the scrape_url tool to read that source.
-
-Return the useful information you find.
-"""
-            )
-        ]
-    })
-
-    state["scraped_content"] = reader_result["messages"][-1].content
+    urls = list(dict.fromkeys(
+        re.findall(r"https?://[^\s<>\]\")']+", state["search_results"])
+    ))[:2]
+    if urls:
+        # Tavily returns sources in relevance order. Read the top two in
+        # parallel so the report can compare evidence without doubling wait.
+        with ThreadPoolExecutor(max_workers=len(urls)) as executor:
+            contents = list(executor.map(
+                lambda url: scrape_url.invoke({"url": url}),
+                urls,
+            ))
+        state["scraped_content"] = "\n\n".join(
+            f"SOURCE {index} ({url}):\n{content}"
+            for index, (url, content) in enumerate(zip(urls, contents), start=1)
+        )
+    else:
+        state["scraped_content"] = "No source URL was returned by the web search."
 
     print("\nScraped Content:\n")
     print(state["scraped_content"])
@@ -94,18 +80,18 @@ Return the useful information you find.
         f"SEARCH RESULTS:\n"
         f"{state['search_results']}\n\n"
 
-        f"DETAILED SCRAPED CONTENT:\n"
+        f"DETAILED SOURCE CONTENT:\n"
         f"{state['scraped_content']}"
 
     )
 
-    state["report"] = writer_chain.invoke({
+    state["report"] = invoke_with_retry(writer_chain, {
 
         "topic": topic,
 
         "research": research_combined
 
-    })
+    }, retries=0)
 
     print("\nFINAL REPORT:\n")
     print(state["report"])

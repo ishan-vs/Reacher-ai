@@ -1,10 +1,15 @@
 from langchain.agents import create_agent
 from langchain_groq import ChatGroq
+from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 
-from tools import web_search, scrape_url
+try:
+    from .tools import web_search, scrape_url
+except ImportError:  # Supports running modules directly from backend/.
+    from tools import web_search, scrape_url
 from dotenv import load_dotenv
+import os
 
 load_dotenv()
 
@@ -13,11 +18,40 @@ load_dotenv()
 # MAIN LLM
 # =========================================================
 
-llm = ChatGroq(
-    model="openai/gpt-oss-120b",
-    temperature=0,
-    max_tokens=1500,
-)
+def _build_llm(max_tokens: int):
+    """Build the configured LLM without ever exposing a provider key to the UI.
+
+    OmniRoute exposes an OpenAI-compatible `/v1` endpoint.  Its `auto` model
+    selects a capable available provider and moves to another one when a
+    configured provider reaches a limit.  If OmniRoute has not been configured
+    yet, keep the original Groq integration working for local development.
+    """
+    omniroute_base_url = os.getenv("OMNIROUTE_BASE_URL", "").strip()
+
+    if omniroute_base_url:
+        return ChatOpenAI(
+            model=os.getenv("OMNIROUTE_MODEL", "auto"),
+            base_url=omniroute_base_url.rstrip("/"),
+            # A locally fresh OmniRoute installation can accept any non-empty
+            # value. A public deployment must use a real scoped gateway key.
+            api_key=os.getenv("OMNIROUTE_API_KEY", "not-needed"),
+            temperature=0.2,
+            max_tokens=max_tokens,
+            max_retries=0,
+        )
+
+    return ChatGroq(
+        model=os.getenv("GROQ_MODEL", "openai/gpt-oss-120b"),
+        temperature=0.2,
+        max_tokens=max_tokens,
+        max_retries=0,
+    )
+
+
+# The writer receives enough output budget for a substantial report, while the
+# smaller critic call keeps the request responsive on serverless deployments.
+llm = _build_llm(max_tokens=2600)
+critic_llm = _build_llm(max_tokens=650)
 
 
 # =========================================================
@@ -153,7 +187,11 @@ Example:
 
 - [Example Source](https://example.com)
 
-Keep the report detailed but readable.
+Write a substantive report of roughly 1,200–1,600 words. Include concrete
+evidence from the supplied material, explain how the sources agree or differ,
+and use a compact table when it improves clarity. Keep it readable, but do not
+replace analysis with a short summary. Finish every required section; never
+stop midway through the report.
 """
     ),
 
@@ -235,7 +273,7 @@ Always provide an answer, even if the report is already good.
 ])
 
 
-critic_chain = critic_prompt | llm | StrOutputParser()
+critic_chain = critic_prompt | critic_llm | StrOutputParser()
 
 
 # =========================================================
@@ -243,45 +281,17 @@ critic_chain = critic_prompt | llm | StrOutputParser()
 # =========================================================
 
 def run_critic_safely(report: str) -> str:
-
-    # First attempt
+    """Return a review without spending another request after a provider error."""
     try:
-
         feedback = critic_chain.invoke({
             "report": report
         })
-
-        # Make sure we actually received text
         if feedback and feedback.strip():
-
             return feedback.strip()
 
-    except Exception as e:
+    except Exception:
+        pass
 
-        print("\nCritic attempt 1 failed:")
-        print(str(e))
-
-
-    # Second attempt
-    print("\nCritic returned empty output. Retrying...")
-
-    try:
-
-        feedback = critic_chain.invoke({
-            "report": report
-        })
-
-        if feedback and feedback.strip():
-
-            return feedback.strip()
-
-    except Exception as e:
-
-        print("\nCritic attempt 2 failed:")
-        print(str(e))
-
-
-    # Final fallback
     return """
 ## Quality Review
 
