@@ -1,6 +1,5 @@
 from langchain.agents import create_agent
 from langchain_groq import ChatGroq
-from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 
@@ -18,40 +17,23 @@ load_dotenv()
 # MAIN LLM
 # =========================================================
 
-def _build_llm(max_tokens: int):
-    """Build the configured LLM without ever exposing a provider key to the UI.
+MODEL_NAME = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
 
-    OmniRoute exposes an OpenAI-compatible `/v1` endpoint.  Its `auto` model
-    selects a capable available provider and moves to another one when a
-    configured provider reaches a limit.  If OmniRoute has not been configured
-    yet, keep the original Groq integration working for local development.
-    """
-    omniroute_base_url = os.getenv("OMNIROUTE_BASE_URL", "").strip()
+# The research request makes only two generation calls. That leaves room for a
+# substantive report while remaining well below the provider's rate limit.
+llm = ChatGroq(
+    model=MODEL_NAME,
+    temperature=0,
+    max_tokens=1600,
+    max_retries=0,
+)
 
-    if omniroute_base_url:
-        return ChatOpenAI(
-            model=os.getenv("OMNIROUTE_MODEL", "auto"),
-            base_url=omniroute_base_url.rstrip("/"),
-            # A locally fresh OmniRoute installation can accept any non-empty
-            # value. A public deployment must use a real scoped gateway key.
-            api_key=os.getenv("OMNIROUTE_API_KEY", "not-needed"),
-            temperature=0.2,
-            max_tokens=max_tokens,
-            max_retries=0,
-        )
-
-    return ChatGroq(
-        model=os.getenv("GROQ_MODEL", "openai/gpt-oss-120b"),
-        temperature=0.2,
-        max_tokens=max_tokens,
-        max_retries=0,
-    )
-
-
-# The writer receives enough output budget for a substantial report, while the
-# smaller critic call keeps the request responsive on serverless deployments.
-llm = _build_llm(max_tokens=2600)
-critic_llm = _build_llm(max_tokens=650)
+critic_llm = ChatGroq(
+    model=MODEL_NAME,
+    temperature=0,
+    max_tokens=450,
+    max_retries=0,
+)
 
 
 # =========================================================
@@ -187,11 +169,10 @@ Example:
 
 - [Example Source](https://example.com)
 
-Write a substantive report of roughly 1,200–1,600 words. Include concrete
+Write a substantive report of roughly 800–1,100 words. Include concrete
 evidence from the supplied material, explain how the sources agree or differ,
 and use a compact table when it improves clarity. Keep it readable, but do not
-replace analysis with a short summary. Finish every required section; never
-stop midway through the report.
+replace analysis with a short summary.
 """
     ),
 

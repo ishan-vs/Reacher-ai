@@ -1,7 +1,6 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-import os
 
 try:
     from .pipeline import run_research_pipeline
@@ -26,10 +25,7 @@ class ResearchRequest(BaseModel):
 
 @app.get("/api")
 def home():
-    return {
-        "message": "Research API is running!",
-        "llm_provider": "omniroute" if os.getenv("OMNIROUTE_BASE_URL") else "groq",
-    }
+    return {"message": "Research API is running!"}
 
 
 @app.post("/api/research")
